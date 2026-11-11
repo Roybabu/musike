@@ -16,6 +16,7 @@ import { useUi } from "../stores/ui";
 import { BackupSection } from "./BackupSection";
 import { AccentPicker, LayoutSection } from "./CustomizeSection";
 import { Modal } from "./Modal";
+import { YouTubeSection } from "./YouTubeSection";
 import { InsightsSection } from "./InsightsSection";
 import { TakeoutSection } from "./TakeoutSection";
 
@@ -157,6 +158,8 @@ export function SettingsDialog() {
         <LayoutSection />
 
         <BackupSection />
+
+        <YouTubeSection />
 
         <TakeoutSection />
 

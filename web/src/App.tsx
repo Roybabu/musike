@@ -1,3 +1,4 @@
+import { startYouTubeSync } from "./youtube/sync";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate, useNavigationType } from "react-router";
 import { AddToPlaylistDialog, ShortcutsDialog } from "./components/Dialogs";
@@ -45,6 +46,8 @@ export default function App() {
   const main = useRef<HTMLElement>(null);
 
   useShortcuts();
+
+  useEffect(() => startYouTubeSync(), []);
 
   useEffect(() => {
     void loadLibrary();
