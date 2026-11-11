@@ -44,7 +44,7 @@ export function TakeoutSection() {
   return <section className="flex flex-col gap-3">
     <h3 className="text-xs font-medium text-fg-3">{pt ? "Histórico do Google Takeout" : "Google Takeout history"}</h3>
     <p className="text-sm text-fg-2">{pt ? "Escolha o arquivo JSON de histórico de exibição extraído do Google Takeout. Ele pode incluir vídeos além de músicas. A duração ou conclusão de cada reprodução é desconhecida." : "Choose the watch-history JSON file extracted from Google Takeout. It may include videos as well as music. Listening duration and completion are unknown."}</p>
-    <p className="text-xs text-fg-3">{pt ? "Os dados ficam neste dispositivo, separados da biblioteca e do backup atual do Musike." : "Activity stays on this device, separate from your library and the current Musike backup."}</p>
+    <p className="text-xs text-fg-3">{pt ? "Os dados ficam neste dispositivo, separados da biblioteca e incluídos nos backups do Musike." : "Activity stays on this device, separate from your library and included in Musike backups."}</p>
     <button type="button" disabled={busy} onClick={() => input.current?.click()} className="flex h-11 items-center justify-center rounded-full bg-surface-1 px-4 text-sm font-medium ring-1 ring-line disabled:opacity-50">{busy ? (pt ? "Importando…" : "Importing…") : (pt ? "Importar histórico JSON" : "Import history JSON")}</button>
     <input ref={input} type="file" accept=".json,application/json" className="hidden" aria-label={pt ? "Selecionar histórico JSON" : "Choose history JSON"} onChange={(event) => void pick(event.target.files?.[0])} />
     {count !== null && <p className="text-xs text-fg-2">{pt ? `${count} atividades armazenadas` : `${count} stored activities`}</p>}

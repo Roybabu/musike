@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+import { ListeningTracker } from "../listening/tracker";
 import { create } from "zustand";
 import { getT, useT } from "../i18n";
 import { api, capabilities, explainStreamError, streamSource, systemMedia, type ApiError, type ErrorCode } from "../lib/api";
@@ -77,6 +79,7 @@ let loaded: { id: string; kind: Kind; quality: Quality } | null = null;
 let pendingSeek = 0;
 let token = 0;
 let recordedToken = -1;
+const listening = Capacitor.getPlatform() === "android" ? new ListeningTracker() : null;
 
 const STORAGE_KEY = "musike:player";
 
@@ -184,6 +187,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
       other.load();
     }
 
+    listening?.flush();
     token++;
     loaded = { id: track.id, kind, quality: s.quality };
     pendingSeek = opts.startAt ?? 0;
@@ -243,6 +247,7 @@ export const usePlayer = create<PlayerState>((set, get) => {
     const track = s.queue[s.index];
     if (!track || recordedToken === token) return;
     recordedToken = token;
+    listening?.start(track);
     useLibrary.getState().recordPlay(track);
     // Warm up the next track (and, in Video mode, find and resolve its clip) so it starts quickly.
     const upcoming = s.queue[s.index + 1];
@@ -254,6 +259,8 @@ export const usePlayer = create<PlayerState>((set, get) => {
   function onEnded() {
     const s = get();
     if (s.repeat === "one") {
+      const track = s.queue[s.index];
+      if (track) listening?.start(track);
       const media = activeMedia();
       if (media) {
         media.currentTime = 0;
@@ -328,14 +335,16 @@ export const usePlayer = create<PlayerState>((set, get) => {
     });
     media.addEventListener("pause", () => {
       if (!isActive() || media.ended || get().status === "loading" || get().status === "error") return;
+      listening?.pause(media.currentTime);
       set({ status: "paused" });
       syncPlaybackState();
     });
     media.addEventListener("waiting", () => {
-      if (isActive() && !media.paused) set({ status: "loading" });
+      if (isActive() && !media.paused) { listening?.pause(media.currentTime); set({ status: "loading" }); }
     });
     media.addEventListener("timeupdate", () => {
       if (!isActive() || pendingSeek > 0) return;
+      if (!media.paused && get().status === "playing" && !media.seeking) listening?.sample(media.currentTime);
       if (Math.abs(media.currentTime - get().position) >= 0.2) set({ position: media.currentTime });
       syncSystemMedia(); // throttled on the other side
     });
@@ -343,8 +352,9 @@ export const usePlayer = create<PlayerState>((set, get) => {
       if (!isActive() || !media.buffered.length) return;
       set({ buffered: media.buffered.end(media.buffered.length - 1) });
     });
+    media.addEventListener("seeking", () => { if (isActive()) listening?.resetBaseline(); });
     media.addEventListener("seeked", () => isActive() && syncPositionState());
-    media.addEventListener("ended", () => isActive() && onEnded());
+    media.addEventListener("ended", () => { if (isActive()) { listening?.pause(media.currentTime); onEnded(); } });
     media.addEventListener("error", () => isActive() && media.getAttribute("src") && onError(media));
   }
   wire(audio);
@@ -587,7 +597,7 @@ function persist() {
   }
 }
 setInterval(persist, 4000);
-addEventListener("pagehide", persist);
+addEventListener("pagehide", () => { listening?.pause(); persist(); });
 document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && persist());
 
 // Media Session: lock-screen, headset and notification controls.
