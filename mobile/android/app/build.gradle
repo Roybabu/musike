@@ -11,6 +11,10 @@ def keystoreFile = rootProject.file('keystore.properties')
 if (keystoreFile.exists()) keystoreFile.withInputStream { keystoreProps.load(it) }
 def signingValue = { String prop, String env -> keystoreProps.getProperty(prop) ?: System.getenv(env) }
 def releaseStore = signingValue('storeFile', 'MUSIKE_KEYSTORE')
+// CI may supply a dedicated test key. The default debug key remains for local development.
+def testStore = System.getenv('MUSIKE_DEBUG_KEYSTORE')
+def testPassword = System.getenv('MUSIKE_DEBUG_KEYSTORE_PASSWORD')
+if (testStore && !testPassword) throw new GradleException('MUSIKE_DEBUG_KEYSTORE_PASSWORD is required for test signing')
 
 android {
     namespace = "app.musike.android"
@@ -29,6 +33,15 @@ android {
         }
     }
     signingConfigs {
+        if (testStore) {
+            debug {
+                storeFile file(testStore)
+                storePassword testPassword
+                keyAlias 'musike-debug'
+                keyPassword testPassword
+                storeType 'PKCS12'
+            }
+        }
         if (releaseStore) {
             release {
                 storeFile rootProject.file(releaseStore)
