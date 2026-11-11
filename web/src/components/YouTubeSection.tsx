@@ -24,6 +24,7 @@ export function YouTubeSection() {
     {s.connected && s.lastSync && s.playlists.length === 0 && <p className="text-sm text-fg-2">{pt ? "Nenhuma playlist encontrada." : "No playlists found."}</p>}
     {s.playlists.map((p) => <div key={p.id} className="rounded-[12px] bg-surface-1 p-3 ring-1 ring-line">
       <p className="text-sm font-medium">{p.name}</p><p className="text-xs text-fg-3">YouTube · {p.tracks.length} {pt ? "faixas" : "tracks"}</p>
+      {p.tracks.length > 500 && <p className="text-xs text-fg-3">{pt ? "Cópias locais são limitadas às primeiras 500 faixas." : "Local copies are limited to the first 500 tracks."}</p>}
       <div className="mt-2 flex gap-2"><button className={button} disabled={!p.tracks.length} onClick={() => usePlayer.getState().playList(p.tracks)}>{pt ? "Tocar" : "Play"}</button><button className={button} disabled={!p.tracks.length} onClick={() => void useLibrary.getState().createPlaylist(p.name, p.tracks)}>{pt ? "Salvar cópia" : "Save copy"}</button></div>
     </div>)}
   </section>;
