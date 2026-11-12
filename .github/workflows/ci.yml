@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: pnpm install --frozen-lockfile
+      - name: Type check
+        run: pnpm -r typecheck
+      - name: Listening and sync tests
+        run: node --test web/test/*.test.ts
+      - name: Build web app
+        run: pnpm --filter @musike/web build
+      - name: Prepare Android app
+        run: pnpm --filter @musike/mobile build
+      # A reusable test key is optional for CI checks, but is required for a downloadable APK.
+      # Never fall back to publishing an APK signed by a different, ephemeral key.
+      - name: Configure stable test signing
+        id: test_signing
+        env:
+          TEST_KEYSTORE_B64: ${{ secrets.MUSIKE_DEBUG_KEYSTORE_BASE64 }}
+          TEST_KEYSTORE_PASSWORD: ${{ secrets.MUSIKE_DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$TEST_KEYSTORE_B64" ] && [ -z "$TEST_KEYSTORE_PASSWORD" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Stable test signing is not configured; no debug APK will be uploaded."
+          elif [ -z "$TEST_KEYSTORE_B64" ] || [ -z "$TEST_KEYSTORE_PASSWORD" ]; then
+            echo "::error::Both test signing secrets are required."
+            exit 1
+          else
+            printf '%s' "$TEST_KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/musike-debug.p12"
+            chmod 600 "$RUNNER_TEMP/musike-debug.p12"
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build Android debug APK and run unit tests
+        working-directory: mobile/android
+        env:
+          MUSIKE_DEBUG_KEYSTORE: ${{ steps.test_signing.outputs.configured == 'true' && format('{0}/musike-debug.p12', runner.temp) || '' }}
+          MUSIKE_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.MUSIKE_DEBUG_KEYSTORE_PASSWORD }}
+        run: sh ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon --console=plain
+
+      - name: Upload Android debug APK
+        if: steps.test_signing.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Musike-Android-debug
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

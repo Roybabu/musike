@@ -16,6 +16,9 @@ import { useUi } from "../stores/ui";
 import { BackupSection } from "./BackupSection";
 import { AccentPicker, LayoutSection } from "./CustomizeSection";
 import { Modal } from "./Modal";
+import { YouTubeSection } from "./YouTubeSection";
+import { InsightsSection } from "./InsightsSection";
+import { TakeoutSection } from "./TakeoutSection";
 
 function Segmented<T extends string>({
   label,
@@ -155,6 +158,12 @@ export function SettingsDialog() {
         <LayoutSection />
 
         <BackupSection />
+
+        <YouTubeSection />
+
+        <TakeoutSection />
+
+        <InsightsSection />
 
         {capabilities.engineSettings && (
         <section className="flex flex-col gap-3">
