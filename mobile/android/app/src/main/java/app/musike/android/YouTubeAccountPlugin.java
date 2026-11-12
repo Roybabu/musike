@@ -61,6 +61,12 @@ public class YouTubeAccountPlugin extends Plugin {
         if (!connected()) { call.reject("Connect Google before syncing"); return; }
         authorize(call, "sync", false);
     }
+    @PluginMethod public void loadPlaylist(PluginCall call) {
+        String id = call.getString("id");
+        if (id == null || !id.matches("[A-Za-z0-9_-]{8,200}")) { call.reject("Invalid playlist ID"); return; }
+        if (!connected()) { call.reject("Connect Google in Settings before loading a YouTube playlist", "AUTH_REQUIRED"); return; }
+        authorize(call, "playlist:" + id, false);
+    }
     @PluginMethod public void forget(PluginCall call) { setConnected(false); call.resolve(); }
     @PluginMethod public void disconnect(PluginCall call) {
         if (!connected()) { call.resolve(); return; }
@@ -93,6 +99,10 @@ public class YouTubeAccountPlugin extends Plugin {
             try {
                 if (task.equals("disconnect")) {
                     revoke(token); setConnected(false); call.resolve();
+                } else if (task.startsWith("playlist:")) {
+                    JSObject out = new JSObject();
+                    out.put("playlist", fetchPlaylist(token, task.substring("playlist:".length()), "YouTube playlist"));
+                    call.resolve(out);
                 } else {
                     JSObject out = new JSObject();
                     out.put("playlists", fetchPlaylists(token));
@@ -142,24 +152,29 @@ public class YouTubeAccountPlugin extends Plugin {
             JSONObject p = playlists.getJSONObject(i); String id = p.optString("id");
             if (id.isEmpty()) continue;
             JSONObject snippet = p.optJSONObject("snippet"); if (snippet == null) continue;
-            JSONArray entries = pages(root + "playlistItems?part=snippet&maxResults=50&playlistId=" + encode(id), token);
-            JSONArray tracks = new JSONArray();
-            for (int j = 0; j < entries.length(); j++) {
-                JSONObject item = entries.getJSONObject(j).optJSONObject("snippet"); if (item == null) continue;
-                JSONObject resource = item.optJSONObject("resourceId"); if (resource == null) continue;
-                String video = resource.optString("videoId"); if (!video.matches("[A-Za-z0-9_-]{11}")) continue;
-                String title = item.optString("title", "Untitled");
-                if (title.equals("Deleted video") || title.equals("Private video")) continue;
-                JSONObject thumb = item.optJSONObject("thumbnails");
-                JSONObject best = thumb == null ? null : thumb.optJSONObject("medium");
-                String artwork = best == null ? "" : best.optString("url", "");
-                JSONObject track = new JSONObject(); track.put("id", video); track.put("title", title);
-                track.put("artist", item.optString("videoOwnerChannelTitle", "")); track.put("duration", 0);
-                track.put("thumb", artwork); track.put("art", artwork); track.put("kind", "video"); tracks.put(track);
-            }
-            JSONObject playlist = new JSONObject(); playlist.put("id", id); playlist.put("name", snippet.optString("title", "Playlist")); playlist.put("tracks", tracks); output.put(playlist);
+            output.put(fetchPlaylist(token, id, snippet.optString("title", "Playlist")));
         }
         return output;
+    }
+    private static JSONObject fetchPlaylist(String token, String id, String title) throws Exception {
+        String root = "https://www.googleapis.com/youtube/v3/";
+        JSONArray entries = pages(root + "playlistItems?part=snippet&maxResults=50&playlistId=" + encode(id), token);
+        JSONArray tracks = new JSONArray();
+        for (int j = 0; j < entries.length(); j++) {
+            JSONObject item = entries.getJSONObject(j).optJSONObject("snippet"); if (item == null) continue;
+            JSONObject resource = item.optJSONObject("resourceId"); if (resource == null) continue;
+            String video = resource.optString("videoId"); if (!video.matches("[A-Za-z0-9_-]{11}")) continue;
+            String name = item.optString("title", "Untitled");
+            if (name.equals("Deleted video") || name.equals("Private video")) continue;
+            JSONObject thumb = item.optJSONObject("thumbnails");
+            JSONObject best = thumb == null ? null : thumb.optJSONObject("medium");
+            String artwork = best == null ? "" : best.optString("url", "");
+            JSONObject track = new JSONObject(); track.put("id", video); track.put("title", name);
+            track.put("artist", item.optString("videoOwnerChannelTitle", "")); track.put("duration", 0);
+            track.put("thumb", artwork); track.put("art", artwork); track.put("kind", "video"); tracks.put(track);
+        }
+        JSONObject playlist = new JSONObject(); playlist.put("id", id); playlist.put("name", title); playlist.put("tracks", tracks);
+        return playlist;
     }
     @Override protected void handleOnDestroy() { io.shutdown(); }
 }

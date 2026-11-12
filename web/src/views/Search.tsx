@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import {
   ArrowRightIcon,
   ArrowUpLeftIcon,
@@ -15,6 +16,8 @@ import { AlbumGrid } from "../components/AlbumTiles";
 import { Artwork } from "../components/Artwork";
 import { GenrePanel } from "../components/GenrePanel";
 import { EmptyState, PageHeader } from "../components/Page";
+import { SharedYouTubePlaylist } from "../components/SharedYouTubePlaylist";
+import { parseYouTubeLink } from "../youtube/links";
 import { TrackList, TrackListSkeleton } from "../components/TrackList";
 import { MD, useMediaQuery } from "../hooks/useMediaQuery";
 import { api } from "../lib/api";
@@ -43,17 +46,6 @@ function saveRecent(list: string[]) {
   }
 }
 
-/** Accepts youtube.com/watch?v=, youtu.be/, music.youtube.com and /shorts/ links. */
-function videoIdFromUrl(text: string): string | null {
-  try {
-    const url = new URL(text.trim());
-    if (!/(^|\.)youtube\.com$|^youtu\.be$/.test(url.hostname)) return null;
-    const id = url.hostname === "youtu.be" ? url.pathname.slice(1) : url.searchParams.get("v") ?? url.pathname.split("/shorts/")[1];
-    return id && /^[A-Za-z0-9_-]{11}$/.test(id.slice(0, 11)) ? id.slice(0, 11) : null;
-  } catch {
-    return null;
-  }
-}
 
 type Kind = "song" | "video" | "album";
 const KIND_PARAM: Record<Kind, string | null> = { song: null, video: "videos", album: "albums" };
@@ -80,9 +72,12 @@ export default function Search() {
   const isMd = useMediaQuery(MD);
   const playTrack = usePlayer((s) => s.playTrack);
 
-  const linkId = videoIdFromUrl(text);
+  const parsedLink = parseYouTubeLink(text);
+  const linkId = parsedLink?.videoId ?? null;
+  const playlistId = Capacitor.getPlatform() === "android" ? (parsedLink?.playlistId ?? null) : null;
+  const isLink = !!(linkId || playlistId);
   // "a, b, c" probably means three songs; offer to search each one (titles can have commas, so only offer).
-  const listTerms = linkId || !text.includes(",") ? [] : parseList(text);
+  const listTerms = isLink || !text.includes(",") ? [] : parseList(text);
 
   const setGenresOpen = (open: boolean) => {
     genresOpenMemo = open;
@@ -102,7 +97,7 @@ export default function Search() {
 
   // Search as you type, debounced.
   useEffect(() => {
-    if (linkId || text.trim() === q) return;
+    if (isLink || text.trim() === q) return;
     const timer = setTimeout(() => setQuery(text), 380);
     return () => clearTimeout(timer);
   }, [text]);
@@ -137,7 +132,7 @@ export default function Search() {
 
   useEffect(() => {
     const term = text.trim();
-    if (!term || linkId) return setSuggestions([]);
+    if (!term || isLink) return setSuggestions([]);
     const ctrl = new AbortController();
     const timer = setTimeout(() => {
       api
@@ -149,7 +144,7 @@ export default function Search() {
       clearTimeout(timer);
       ctrl.abort();
     };
-  }, [text, linkId]);
+  }, [text, isLink]);
 
   useEffect(() => {
     if (!linkId) return setLinkTrack(null);
@@ -201,7 +196,7 @@ export default function Search() {
           onSubmit={(e) => {
             e.preventDefault();
             input.current?.blur();
-            if (!linkId) setQuery(text);
+            if (!isLink) setQuery(text);
           }}
           className="relative"
         >
@@ -273,7 +268,7 @@ export default function Search() {
           </div>
         )}
 
-        {!linkId && (
+        {!isLink && (
           <div className="flex flex-wrap items-center gap-2">
             <div role="tablist" aria-label={t.search.resultType} className="flex gap-2">
               {tab("song", t.search.songs)}
@@ -306,10 +301,11 @@ export default function Search() {
           </div>
         )}
 
-        {!linkId && genresOpen && <GenrePanel id="genre-panel" />}
+        {!isLink && genresOpen && <GenrePanel id="genre-panel" />}
       </div>
 
       <div className="mt-4 px-2 md:px-3">
+        {playlistId && <SharedYouTubePlaylist id={playlistId} isMix={!!parsedLink?.isMix} />}
         {linkId && (
           <div className="px-2 md:px-3">
             {linkTrack === "loading" && <TrackListSkeleton rows={1} />}
@@ -337,9 +333,9 @@ export default function Search() {
           </div>
         )}
 
-        {!linkId && state === "loading" && <TrackListSkeleton />}
+        {!isLink && state === "loading" && <TrackListSkeleton />}
 
-        {!linkId && state === "error" && (
+        {!isLink && state === "error" && (
           <EmptyState
             icon={<WarningCircleIcon size={28} />}
             title={t.search.failed}
@@ -356,13 +352,13 @@ export default function Search() {
           />
         )}
 
-        {!linkId && state === "ok" && albums && (albums.length ? (
+        {!isLink && state === "ok" && albums && (albums.length ? (
           <AlbumGrid albums={albums} />
         ) : (
           <EmptyState icon={<MagnifyingGlassIcon size={28} />} title={t.search.nothingFound} body={t.search.nothingFoundBody(q, t.search.songs)} />
         ))}
 
-        {!linkId && state === "ok" && results && results.length === 0 && (
+        {!isLink && state === "ok" && results && results.length === 0 && (
           <EmptyState
             icon={<MagnifyingGlassIcon size={28} />}
             title={t.search.nothingFound}
@@ -370,9 +366,9 @@ export default function Search() {
           />
         )}
 
-        {!linkId && state === "ok" && results && results.length > 0 && <TrackList tracks={results} showAlbum={kind === "song"} />}
+        {!isLink && state === "ok" && results && results.length > 0 && <TrackList tracks={results} showAlbum={kind === "song"} />}
 
-        {!linkId && state === "idle" && (
+        {!isLink && state === "idle" && (
           <div className="px-2 md:px-3">
             {recent.length > 0 ? (
               <div className="flex flex-col gap-3">
