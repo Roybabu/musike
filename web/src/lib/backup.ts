@@ -1,5 +1,5 @@
 import { Capacitor } from "@capacitor/core";
-import { allActivities, allSessions, restoreListeningData, type ListeningSession } from "../listening/takeoutStore";
+import { allActivities, allSessions, allSavedSongs, restoreListeningData, type ListeningSession } from "../listening/takeoutStore";
 import type { TakeoutActivity } from "../listening/takeout";
 import { getLang, getT, isLang, useI18n } from "../i18n";
 import { usePlayer } from "../player/player";
@@ -7,7 +7,7 @@ import { cleanAppearance, currentAppearance, useAppearance, type Appearance } fr
 import { useLibrary } from "../stores/library";
 import { useUi } from "../stores/ui";
 import { api, saveFile, type ImportResult } from "./api";
-import type { Library } from "./types";
+import type { Library, Track } from "./types";
 
 /**
  * Portable backup of a Musike instance: the library plus a few preferences.
@@ -19,7 +19,7 @@ export interface Backup {
   exportedAt: string;
   app: string;
   library: Library;
-  listening?: { activities: TakeoutActivity[]; sessions: ListeningSession[] };
+  listening?: { activities: TakeoutActivity[]; sessions: ListeningSession[]; savedSongs?: Track[] };
   settings?: {
     theme?: "dark" | "light";
     lang?: string;
@@ -39,7 +39,7 @@ export async function createBackup(): Promise<Backup> {
     version: 1,
     exportedAt: new Date().toISOString(),
     app: `Musike ${__APP_VERSION__}`,
-    ...(Capacitor.getPlatform() === "android" ? { listening: { activities: await allActivities(), sessions: await allSessions() } } : {}),
+    ...(Capacitor.getPlatform() === "android" ? { listening: { activities: await allActivities(), sessions: await allSessions(), savedSongs: await allSavedSongs() } } : {}),
     library: { favorites: library.favorites, playlists: library.playlists, history: library.history },
     settings: {
       theme: useUi.getState().theme,

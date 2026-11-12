@@ -1,4 +1,5 @@
 import type { TakeoutActivity } from "./takeout";
+import type { Track } from "../lib/types";
 
 // An independent database keeps imports away from the existing library and its backup format.
 const DATABASE = "musike-takeout-activity";
@@ -6,9 +7,10 @@ const STORE = "activities";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE, 2);
+    const request = indexedDB.open(DATABASE, 3);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE, { keyPath: ["videoId", "watchedAt"] });
+      if (!request.result.objectStoreNames.contains("savedSongs")) request.result.createObjectStore("savedSongs", { keyPath: "id" });
       if (!request.result.objectStoreNames.contains("sessions")) request.result.createObjectStore("sessions", { keyPath: "id" });
     };
     request.onsuccess = () => resolve(request.result);
@@ -80,6 +82,7 @@ async function readAll<T>(store: string): Promise<T[]> {
     });
   } finally { db.close(); }
 }
+export const allSavedSongs = () => readAll<Track>("savedSongs");
 export const allActivities = () => readAll<TakeoutActivity>(STORE);
 export const allSessions = () => readAll<ListeningSession>("sessions");
 
@@ -122,7 +125,38 @@ export async function restoreListeningData(input: unknown): Promise<void> {
     if (typeof s.id !== "string" || !/^[\w-]{8,64}$/.test(s.id) || typeof s.startedAt !== "string" || !Number.isFinite(Date.parse(s.startedAt)) || typeof s.listenedSeconds !== "number" || !Number.isFinite(s.listenedSeconds) || s.listenedSeconds < 0 || typeof s.counted !== "boolean" || !s.track || typeof s.track.id !== "string" || !/^[\w-]{11}$/.test(s.track.id) || typeof s.track.title !== "string" || typeof s.track.artist !== "string" || typeof s.track.duration !== "number" || !Number.isFinite(s.track.duration)) throw new Error("Invalid listening session");
     return { id: s.id, startedAt: new Date(s.startedAt).toISOString(), listenedSeconds: s.listenedSeconds, counted: s.counted, track: { id: s.track.id, title: s.track.title.slice(0, 300), artist: s.track.artist.slice(0, 300), duration: Math.max(0, s.track.duration), thumb: typeof s.track.thumb === "string" && /^https:\/\//.test(s.track.thumb) ? s.track.thumb.slice(0, 500) : "", art: typeof s.track.art === "string" && /^https:\/\//.test(s.track.art) ? s.track.art.slice(0, 500) : "", kind: s.track.kind === "video" ? "video" : "song" } };
   });
+  const rawSongs = data.savedSongs ?? [];
+  if (!Array.isArray(rawSongs)) throw new Error("Invalid saved songs backup");
+  const savedSongs: Track[] = rawSongs.map((v: unknown) => {
+    if (!v || typeof v !== "object") throw new Error("Invalid saved song");
+    const t = v as Record<string, unknown>;
+    if (typeof t.id !== "string" || !/^[\w-]{11}$/.test(t.id) || typeof t.title !== "string" || typeof t.artist !== "string") throw new Error("Invalid saved song");
+    return { id: t.id, title: t.title.slice(0, 300), artist: t.artist.slice(0, 300), album: typeof t.album === "string" ? t.album.slice(0, 300) : undefined, duration: 0, thumb: "", art: "", kind: "song" };
+  });
+  await importTakeoutBundle([], savedSongs);
   // Listening records always merge; replacing a library must not silently erase separate listening data.
   await importActivities(activities);
   await saveSessions(sessions);
+}
+
+/** Add both parts together, without changing existing user playlists or favorites. */
+export async function importTakeoutBundle(activities: TakeoutActivity[], songs: Track[]): Promise<{ activitiesAdded: number; songsAdded: number; duplicates: number }> {
+  const db = await openDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction([STORE, "savedSongs"], "readwrite");
+      let activitiesAdded = 0, songsAdded = 0, duplicates = 0;
+      try {
+        for (const [store, items] of [[STORE, activities], ["savedSongs", songs]] as const) {
+          for (const item of items) {
+            const req = tx.objectStore(store).add(item);
+            req.onsuccess = () => { if (store === STORE) activitiesAdded++; else songsAdded++; };
+            req.onerror = (event) => { if (req.error?.name === "ConstraintError") { event.preventDefault(); event.stopPropagation(); duplicates++; } };
+          }
+        }
+      } catch (error) { tx.abort(); reject(error); return; }
+      tx.oncomplete = () => resolve({ activitiesAdded, songsAdded, duplicates });
+      tx.onabort = () => reject(tx.error ?? new Error("Could not save Takeout data"));
+    });
+  } finally { db.close(); }
 }
